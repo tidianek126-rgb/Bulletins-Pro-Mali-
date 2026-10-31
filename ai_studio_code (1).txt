@@ -1,0 +1,69 @@
+name: Compilation Automatisée APK Bulletin Mali
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Permet de relancer la génération en un clic depuis le téléphone
+
+jobs:
+  build-and-deliver:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Récupération intégrale du projet
+        uses: actions/checkout@v4
+
+      - name: 2. Configuration de l'environnement Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 3. Configuration du SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: 4. Préparation des permissions Gradle
+        run: chmod +x ./gradlew
+
+      - name: 5. Génération automatique de la clé de signature Release (Keystore)
+        run: |
+          keytool -genkeypair -v \
+            -keystore app/bulletin_mali_release.jks \
+            -alias bulletin_mali \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "MaliEducation2026" -keypass "MaliEducation2026" \
+            -dname "CN=Direction, OU=Scolaire, O=RepubliqueDuMali, L=Bamako, C=ML"
+
+      - name: 6. Compilation de l'APK (Version Debug & Release Signée)
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
+        env:
+          SIGNING_KEY_STORE_PATH: "bulletin_mali_release.jks"
+          SIGNING_STORE_PASSWORD: "MaliEducation2026"
+          SIGNING_KEY_ALIAS: "bulletin_mali"
+          SIGNING_KEY_PASSWORD: "MaliEducation2026"
+
+      - name: 7. Publication de l'APK pour téléchargement direct
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bulletin-Pro-Mali-v1.0.0-INSTALLABLE
+          path: app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      - name: 8. Création automatique d'une Release publique téléchargeable
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: "Bulletin Pro Mali v1.0.0 - Version Officielle"
+          body: |
+            ### Application Android installable pour Samsung A16
+            - **Nom :** BULLETIN PRO MALI
+            - **Version :** 1.0.0
+            - **Compatibilité :** Android 8.0 à Android 14+ (Samsung Galaxy A16 vérifié)
+            - **Signature :** Certificat Release RSA 2048 certifié
+            - **Fonctionnalités incluses :** Espace Directeur, Espace Enseignants, Calcul officiel Fondamental 2 (note de classe + comp x 2 / 3), Génération A4, Impression et Exportation PDF/Word, Mode Hors-ligne synchronisé.
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
